@@ -4,14 +4,25 @@ import (
 	"bufio"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/nsf/termbox-go"
 )
 
+// Similar to vi/vim editors, we will have 2 modes. View and edit
+// mode bit 0 -> View
+// mode bit 1 -> Edit
+// make it a bool for efficiency? (Prolly not)
+
+var mode int
 // To adjust the size of the terminal window
 var ROWS,COLS int 
 
+
+// To track the cursor
+var currRow,currCol int
 // These variables help in displaying parts of the entire text buffer
 // Will help in scrolling and will help in displaying only required parts in the window
 // Defaulted to 0
@@ -84,7 +95,29 @@ func display() {
 	}
 }
 
-func dummyPrint(col,row int, fg,bg termbox.Attribute,message string) {
+// To display the status bar at the bottom
+// Will need: mode,File name,current row and current col
+func statusBar() {
+	var modeString string 
+	if mode==0 {
+		modeString="--VIEW--"
+	} else {
+		modeString="--EDIT--"
+	}
+
+	fileLen:=strconv.Itoa(len(textBuffer))
+	usedSpace:=len(modeString)+len(targetFile)+len(fileLen)
+	spaceLeft:=COLS-usedSpace
+
+	spacePadding:=strings.Repeat(" ",spaceLeft)
+
+	locStatus:="Row "+strconv.Itoa(currRow+1)+" Col "+strconv.Itoa(currCol+1)
+	lenStatus:="  "+fileLen+" lines"
+	statusMessage:=modeString+" "+targetFile+lenStatus+spacePadding+locStatus
+	singlePrint(0,ROWS,termbox.ColorBlack,termbox.ColorWhite,statusMessage)
+}
+
+func singlePrint(col,row int, fg,bg termbox.Attribute,message string) {
 	for _,ch:=range message {
 		termbox.SetCell(col,row,ch,fg,bg)
 		col+=runewidth.RuneWidth(ch)
@@ -112,9 +145,13 @@ func RunEditor() {
 // The textbox runs till Escape key is pressed
 	for{
 
-		ROWS,COLS=termbox.Size()
+		COLS,ROWS=termbox.Size()
+		ROWS-=1
+
+		COLS=min(COLS,100)
 		//dummyPrint(0,0,termbox.ColorGreen,termbox.ColorDefault,"Sumukh")
 		display()
+		statusBar()
 		termbox.Flush()
 		event:=termbox.PollEvent()
 

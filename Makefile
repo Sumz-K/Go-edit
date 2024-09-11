@@ -7,7 +7,7 @@ run:
 	@cd $(DIR) && go run . 
 
 runfile:
-	@cd $(DIR) && go run main.go ./targetfile.txt
+	@cd $(DIR) && go run main.go targetfile.txt
 
 .PHONY: runfile
 
