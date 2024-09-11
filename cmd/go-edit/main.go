@@ -1,7 +1,9 @@
 package main
 
-import "fmt"
+import (
+    "github.com/Sumz-K/Go-edit/internal/editor"
+)
 
 func main() {
-	fmt.Print("Welcome to this barebones code editor")
+    editor.RunEditor()
 }
