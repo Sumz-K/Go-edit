@@ -143,9 +143,11 @@ func singlePrint(col,row int, fg,bg termbox.Attribute,message string) {
 		col+=runewidth.RuneWidth(ch)
 	}
 }
-var tempRowUp int
 
+// These variables help with preserving the column state on encountering a newline during traversal. Init in the RunEditor() func
+var tempRowUp int
 var tempRowDown int
+
 // This handles navigation of the cursor. Still needs some work
 func handleInput() {
 	event:=termbox.PollEvent()
@@ -216,6 +218,23 @@ func handleInput() {
 						currRow+=1
 						currCol=0
 					}
+
+				// Advanced navigations to move to start|end of a line or the entire file
+				case termbox.KeyEnd : //this is fn + right arrow
+						currCol=len(textBuffer[currRow])
+					
+				case termbox.KeyHome: // fn + left arrow
+					currCol=0
+				
+				case termbox.KeyPgup: //fn + arrowUp
+					currRow=0
+					currCol=0
+
+				case termbox.KeyPgdn: //fn + arrowDown
+					currRow=len(textBuffer)-1
+					currCol=0
+				
+					
 				default:
 					log.Println("Some other key")
 					
