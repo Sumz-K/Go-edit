@@ -70,7 +70,25 @@ func readFile(target string) {
 	}
 }
 
+// Adjust the offsets to determine what will be in screen and what not
+func scroll() {
+	// If the row goes out of the window at the bottom, extend the bottom
+	if currRow >= relativeY+ROWS {
+		relativeY=currRow-ROWS+1
+	}
+	
+	if currRow < relativeY {
+		relativeY=currRow
+	}
 
+	if currCol>=relativeX+COLS {
+		relativeX=currCol-COLS+1
+	}
+
+	if currCol < relativeX {
+		relativeX=currCol
+	}
+}
 // This function displays the text buffer 
 func display() {
 	var row,col int
@@ -83,7 +101,7 @@ func display() {
 				if textBuffer[bufRow][bufCol]!='\t' {
 					termbox.SetCell(col,row,textBuffer[bufRow][bufCol],termbox.ColorLightCyan,termbox.ColorDefault)
 				} else {
-					log.Println("Tab detected")
+					//log.Println("Tab detected")
 					termbox.SetCell(col,row,rune(' '),termbox.ColorGreen,termbox.ColorDefault)
 				}
 			} else if bufRow>=len(textBuffer) {
@@ -108,7 +126,9 @@ func statusBar() {
 	fileLen:=strconv.Itoa(len(textBuffer))
 	usedSpace:=len(modeString)+len(targetFile)+len(fileLen)
 	spaceLeft:=COLS-usedSpace
-
+	if spaceLeft<0 {
+		spaceLeft=0
+	}
 	spacePadding:=strings.Repeat(" ",spaceLeft)
 
 	locStatus:="Row "+strconv.Itoa(currRow+1)+" Col "+strconv.Itoa(currCol+1)
@@ -123,7 +143,87 @@ func singlePrint(col,row int, fg,bg termbox.Attribute,message string) {
 		col+=runewidth.RuneWidth(ch)
 	}
 }
+var tempRowUp int
 
+var tempRowDown int
+// This handles navigation of the cursor. Still needs some work
+func handleInput() {
+	event:=termbox.PollEvent()
+
+	
+	switch event.Type {
+		case termbox.EventKey:
+			switch event.Key {
+				case termbox.KeyEsc:
+					termbox.Close()
+					os.Exit(0)
+				case termbox.KeyArrowDown:
+					if currRow < len(textBuffer)-1 {
+						currRow+=1
+						if tempRowDown!=-1 {
+							anotherMax:=len(textBuffer[currRow])
+							if anotherMax < tempRowDown {
+								currCol=anotherMax
+							} else {
+								currCol=tempRowDown
+							}
+							tempRowDown=-1
+						} else {
+							if len(textBuffer[currRow])==0 {
+								tempRowDown=currCol
+							}
+							maxCol:=len(textBuffer[currRow])
+							if currCol>maxCol {
+								currCol=maxCol
+							}
+						}
+					}
+				case termbox.KeyArrowUp:
+					if currRow > 0 {
+						
+						currRow-=1
+						if tempRowUp!=-1 {
+							anotherMax:=len(textBuffer[currRow])
+							if anotherMax < tempRowUp {
+								currCol=anotherMax
+							} else {
+								currCol=tempRowUp
+							}
+							tempRowUp=-1
+						} else {
+							
+							log.Println("This is supposed to be a newline ",len(textBuffer[currRow]))
+							if len(textBuffer[currRow])==0 {
+								tempRowUp=currCol
+							}
+							maxCol:=len(textBuffer[currRow])
+							if maxCol < currCol {
+								currCol=maxCol
+							}
+						}
+					}
+				case termbox.KeyArrowLeft:
+					if currCol!=0 {
+						currCol-=1
+					} else if currRow>0{
+						currRow-=1
+						currCol=len(textBuffer[currRow])
+					}
+				case termbox.KeyArrowRight:
+					if currCol<len(textBuffer[currRow]) {
+						currCol+=1
+					} else if currRow<len(textBuffer)-1 {
+						currRow+=1
+						currCol=0
+					}
+				default:
+					log.Println("Some other key")
+					
+			}
+		case termbox.EventError:
+			panic(event.Err)
+	}
+}
 func RunEditor() {
 	logger()
 
@@ -142,6 +242,9 @@ func RunEditor() {
 		readFile(targetFile)
 	}
 
+	tempRowUp=-1
+	tempRowDown=-1
+
 // The textbox runs till Escape key is pressed
 	for{
 
@@ -150,14 +253,14 @@ func RunEditor() {
 
 		COLS=min(COLS,100)
 		//dummyPrint(0,0,termbox.ColorGreen,termbox.ColorDefault,"Sumukh")
+		termbox.Clear(termbox.ColorDefault,termbox.ColorDefault)
+		scroll()
 		display()
 		statusBar()
+		
+		termbox.SetCursor(currCol-relativeX,currRow-relativeY)
 		termbox.Flush()
-		event:=termbox.PollEvent()
-
-		if event.Type==termbox.EventKey && event.Key==termbox.KeyEsc {
-			termbox.Close()
-			break
-		}
+		handleInput()
+		
 	}
 }
