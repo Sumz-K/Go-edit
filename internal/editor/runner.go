@@ -12,11 +12,10 @@ import (
 )
 
 // Similar to vi/vim editors, we will have 2 modes. View and edit
+
 // mode bit 0 -> View
 // mode bit 1 -> Insert/Edit
-// make it a bool for efficiency? (Prolly not)
-
-// To toggle to insert mode, press "i"
+// make it a bool for efficiency? (Prolly not)// To toggle to insert mode, press "i"
 var mode int
 
 // To adjust the size of the terminal window
@@ -167,17 +166,97 @@ func insertCharacter(event termbox.Event) {
 }
 
 func deleteCharacter() {
-	currCol-=1
-	log.Println("Delete prompted")
-	tempBuffer:=make([]rune,len(textBuffer[currRow])-1)
+	if currCol>0 {
+		currCol-=1
+		log.Println("Delete prompted")
+		tempBuffer:=make([]rune,len(textBuffer[currRow])-1)
 
-	copy(tempBuffer[:currCol],textBuffer[currRow][:currCol])
+		copy(tempBuffer[:currCol],textBuffer[currRow][:currCol])
 
-	//copy the rest skipping currCol
+		//copy the rest skipping currCol
+		copy(tempBuffer[currCol:],textBuffer[currRow][currCol+1:])
 
-	copy(tempBuffer[currCol:],textBuffer[currRow][currCol+1:])
+		textBuffer[currRow]=tempBuffer
+	} else {
+		if currRow > 0 { //wrap feature to bring the line to the same level as prev line
 
-	textBuffer[currRow]=tempBuffer
+			// make a tempBuffer to store the contents of the current and the previous row
+			tempBuffer:=make([]rune,len(textBuffer[currRow])+len(textBuffer[currRow-1]))
+
+			copy(tempBuffer[:len(textBuffer[currRow-1])],textBuffer[currRow-1])
+			copy(tempBuffer[len(textBuffer[currRow-1]):],textBuffer[currRow])
+
+			// we will have to reassign the textBuffer because otherwise the number of lines will never really reduce, will just have empty lines at the bottom. If performance is what I seek, I can do that
+			
+			newBuffer:=make([][]rune,len(textBuffer)-1)
+
+			for i:=0;i<currRow;i++ {
+				newBuffer[i]=textBuffer[i]
+			}
+
+			for i:=currRow+1;i<len(textBuffer);i++ {
+				newBuffer[i-1]=textBuffer[i]
+			}
+
+			textBuffer=newBuffer
+
+
+			textBuffer[currRow-1]=tempBuffer
+			currRow-=1
+			currCol=len(textBuffer[currRow])
+		}
+	}
+}
+
+func insertLine() {
+	log.Println("Enter insertline function")
+	
+
+	if currCol>=len(textBuffer[currRow])-1 {
+		newBuffer:=make([][]rune,len(textBuffer)+1)
+		log.Println("Entered the if block")
+		for i:=0;i<=currRow;i++ {
+			newBuffer[i]=textBuffer[i]
+		}
+		
+		currRow+=1
+		newBuffer[currRow]=make([]rune,0)
+		for i:=currRow+1;i<=len(textBuffer);i++ {
+			newBuffer[i]=textBuffer[i-1]
+		}
+
+		textBuffer=newBuffer
+		currCol=0
+	} else if currCol==0 {
+		newBuffer:=make([][]rune,len(textBuffer)+1)
+		for i:=0;i<currRow;i++ {
+			newBuffer[i]=textBuffer[i]
+		}
+		newBuffer[currRow]=make([]rune,0)
+		currRow+=1
+
+		for i:=currRow;i<=len(textBuffer);i++ {
+			newBuffer[i]=textBuffer[i-1]
+		}
+		textBuffer=newBuffer
+	} else {
+		newBuffer:=make([][]rune,len(textBuffer)+1)
+		leftBuffer:=make([]rune,len(textBuffer[currRow][:currCol]))
+		rightBuffer:=make([]rune,len(textBuffer[currRow][currCol:]))
+
+		copy(leftBuffer,textBuffer[currRow][:currCol])
+		copy(rightBuffer,textBuffer[currRow][currCol:])
+
+		textBuffer[currRow]=leftBuffer
+		currRow+=1
+		currCol=0
+
+		copy(newBuffer,textBuffer[:currRow])
+		newBuffer[currRow]=rightBuffer
+
+		copy(newBuffer[currRow+1:],textBuffer[currRow:])
+		textBuffer=newBuffer
+	}
 }
 
 func singlePrint(col, row int, fg, bg termbox.Attribute, message string) {
@@ -217,11 +296,21 @@ func handleInput() {
 			case termbox.KeyEsc:
 				mode = 0
 
+			case termbox.KeyEnter:
+				if mode==1 {
+					insertLine()
+				} else {
+					currRow+=1
+					currCol=0
+				}
+
 			case termbox.KeyBackspace2:
 				if mode==1 {
 					deleteCharacter()
 				} else {
-					currCol-=1
+					if currCol>0 {
+						currCol-=1
+					}
 				}
 			case termbox.KeySpace:
 				if mode==1 {
