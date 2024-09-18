@@ -41,6 +41,9 @@ var modified bool
 // Will only support copy/pasting of single lines
 var copyBuffer []rune
 
+var undoStack [][][]rune
+
+var redoStack [][][]rune
 
 // To log to a file
 func logger() {
@@ -258,7 +261,7 @@ func insertLine() {
 	
 
 	// add empty newline after current line
-	if currCol>=len(textBuffer[currRow])-1 {
+	if currCol>len(textBuffer[currRow])-1 {
 		newBuffer:=make([][]rune,len(textBuffer)+1)
 		log.Println("Entered the if block")
 		for i:=0;i<=currRow;i++ {
@@ -315,6 +318,9 @@ func singlePrint(col, row int, fg, bg termbox.Attribute, message string) {
 
 
 func copyLine() {
+	if currRow >= len(textBuffer) {
+		return 
+	}
 	tempBuffer:=make([]rune,len(textBuffer[currRow]))
 	copy(tempBuffer,textBuffer[currRow])
 	copyBuffer=tempBuffer
@@ -331,10 +337,19 @@ func pasteLine() {
 		copy(newBuffer[currRow+1:],textBuffer[currRow:])
 
 		textBuffer=newBuffer
+
+		modified=true
 	}
 }
 
 func cutLine() {
+
+	if currRow >= len(textBuffer) || len(textBuffer[currRow])==0 {
+		currRow-=1
+		currCol=0
+		deleteCharacter()
+		return 
+	}
 	tempBuffer:=make([]rune,len(textBuffer[currRow]))
 	newbuffer:=make([][]rune,len(textBuffer)-1)
 
@@ -344,8 +359,98 @@ func cutLine() {
 	copy(newbuffer[currRow:],textBuffer[currRow+1:])
 	textBuffer=newbuffer
 	copyBuffer=tempBuffer
+
+	currRow-=1
+	currCol=0
+	modified=true
 }
 
+
+func pushToStack() {
+	if !modified {
+        // Deep copy textBuffer
+        tempBuffer := make([][]rune, len(textBuffer))
+        for i, row := range textBuffer {
+            tempBuffer[i] = make([]rune, len(row))
+            copy(tempBuffer[i], row)
+        }
+        undoStack = append(undoStack, tempBuffer)
+    }
+}
+
+
+func pushHelper() {
+	tempBuffer := make([][]rune, len(textBuffer))
+	for i, row := range textBuffer {
+		tempBuffer[i] = make([]rune, len(row))
+		copy(tempBuffer[i], row)
+	}
+    undoStack = append(undoStack, tempBuffer)
+}
+
+
+
+func undo() {
+
+	if len(undoStack) == 0 {
+        log.Println("Nothing to undo")
+        return
+    }
+
+	if modified {
+		log.Println("Undo being called")
+// the following 5-6 lines to support redo
+		tempBuffer:=make([][]rune,len(textBuffer))
+
+		for i,ele:= range textBuffer {
+			tempBuffer[i]=make([]rune, len(ele))
+			copy(tempBuffer[i],ele)
+		}
+		redoStack = append(redoStack, tempBuffer)
+
+
+		lastState := undoStack[len(undoStack)-1]
+        undoStack = undoStack[:len(undoStack)-1] // Remove last state from stack
+
+        // Deep copy the last state to textBuffer
+        newBuffer := make([][]rune, len(lastState))
+        for i, row := range lastState {
+            newBuffer[i] = make([]rune, len(row))
+            copy(newBuffer[i], row)
+        }
+		textBuffer=newBuffer
+		currCol=0
+		currRow=0
+
+		modified=false
+
+	}
+}
+
+
+func redo() {
+	if len(redoStack)==0 {
+		log.Println("nothing to redo")
+		return 
+	}
+
+	pushHelper()
+
+	redoState:=redoStack[len(redoStack)-1]
+
+	redoStack=redoStack[:len(redoStack)-1]
+
+	newBuffer := make([][]rune, len(redoState))
+	for i, row := range redoState {
+		newBuffer[i] = make([]rune, len(row))
+		copy(newBuffer[i], row)
+	}
+	textBuffer=newBuffer
+	currCol=0
+
+	modified=true
+
+}
 
 // These variables help with preserving the column state on encountering a newline during traversal. Init in the RunEditor() func
 var tempRowUp int
@@ -503,6 +608,12 @@ func handleInput() {
 				} else {
 					log.Println("Cannot cut in view mode")
 				}
+
+			case termbox.KeyCtrlZ:
+				undo()
+
+			case termbox.KeyCtrlY:
+				redo()
 			
 			default:
 				log.Println("Some other key")
@@ -548,6 +659,7 @@ func RunEditor() {
 		statusBar()
 
 		termbox.SetCursor(currCol-relativeX, currRow-relativeY)
+		pushToStack()
 		termbox.Flush()
 		handleInput()
 
