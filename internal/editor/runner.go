@@ -35,6 +35,13 @@ var textBuffer [][]rune
 // targetFile is a command line argument. This file if exists populates the text buffer with its contents
 var targetFile string
 
+// To track if a file has been saved or not
+var modified bool
+
+// Will only support copy/pasting of single lines
+var copyBuffer []rune
+
+
 // To log to a file
 func logger() {
 	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -71,6 +78,34 @@ func readFile(target string) {
 	}
 }
 
+func save(filename string) {
+	log.Println("Filename is ",filename)
+	file,err:=os.Create(filename)
+	if err!=nil {
+		log.Fatal("Error opening file ",err)
+	}
+	defer file.Close()
+
+	writer:=bufio.NewWriter(file)
+
+
+	for i,ele:=range textBuffer {
+		if i==len(textBuffer)-1 {
+			_,err=writer.WriteString(string(ele))
+			if err!=nil {
+				log.Fatal(err," occured\n")
+			}
+		} else {
+			_,err=writer.WriteString(string(ele)+"\n")
+			if err!=nil {
+				log.Fatal(err," occured\n")
+			}
+		}		
+	}
+	modified=false
+	writer.Flush()
+}
+
 // Adjust the offsets to determine what will be in screen and what not
 func scroll() {
 	// If the row goes out of the window at the bottom, extend the bottom
@@ -101,13 +136,13 @@ func display() {
 
 			if bufRow >= 0 && bufRow < len(textBuffer) && bufCol >= 0 && bufCol < len(textBuffer[bufRow]) {
 				if textBuffer[bufRow][bufCol] != '\t' {
-					termbox.SetCell(col, row, textBuffer[bufRow][bufCol], termbox.ColorLightCyan, termbox.ColorDefault)
+					termbox.SetCell(col, row, textBuffer[bufRow][bufCol], termbox.ColorWhite, termbox.ColorDefault)
 				} else {
 					//log.Println("Tab detected")
 					termbox.SetCell(col, row, rune(' '), termbox.ColorGreen, termbox.ColorDefault)
 				}
 			} else if bufRow >= len(textBuffer) {
-				termbox.SetCell(0, row, rune('*'), termbox.ColorLightCyan, termbox.ColorDefault)
+				termbox.SetCell(0, row, rune('*'), termbox.ColorCyan, termbox.ColorDefault)
 			}
 
 		}
@@ -125,8 +160,16 @@ func statusBar() {
 		modeString = "--EDIT--"
 	}
 
+	var status string 
+
+	if modified {
+		status="modified"
+	} else {
+		status="saved"
+	}
+
 	fileLen := strconv.Itoa(len(textBuffer))
-	usedSpace := len(modeString) + len(targetFile) + len(fileLen)
+	usedSpace := len(modeString) + len(targetFile) + len(fileLen) + len(status)
 	spaceLeft := COLS - usedSpace
 	if spaceLeft < 0 {
 		spaceLeft = 0
@@ -134,8 +177,8 @@ func statusBar() {
 	spacePadding := strings.Repeat(" ", spaceLeft)
 
 	locStatus := "Row " + strconv.Itoa(currRow+1) + " Col " + strconv.Itoa(currCol+1)
-	lenStatus := "  " + fileLen + " lines"
-	statusMessage := modeString + " " + targetFile + lenStatus + spacePadding + locStatus
+	lenStatus := "  " + fileLen + " lines "
+	statusMessage := modeString + " " + targetFile + lenStatus + status+ spacePadding + locStatus
 	singlePrint(0, ROWS, termbox.ColorBlack, termbox.ColorWhite, statusMessage)
 }
 
@@ -163,6 +206,7 @@ func insertCharacter(event termbox.Event) {
 	// write back to the text buffer
 	textBuffer[currRow]=tempBuffer
 	currCol+=1
+	modified=true
 }
 
 func deleteCharacter() {
@@ -206,12 +250,14 @@ func deleteCharacter() {
 			currCol=len(textBuffer[currRow])
 		}
 	}
+	modified=true
 }
 
 func insertLine() {
 	log.Println("Enter insertline function")
 	
 
+	// add empty newline after current line
 	if currCol>=len(textBuffer[currRow])-1 {
 		newBuffer:=make([][]rune,len(textBuffer)+1)
 		log.Println("Entered the if block")
@@ -227,7 +273,7 @@ func insertLine() {
 
 		textBuffer=newBuffer
 		currCol=0
-	} else if currCol==0 {
+	} else if currCol==0 { //add empty newline before the current line
 		newBuffer:=make([][]rune,len(textBuffer)+1)
 		for i:=0;i<currRow;i++ {
 			newBuffer[i]=textBuffer[i]
@@ -239,7 +285,7 @@ func insertLine() {
 			newBuffer[i]=textBuffer[i-1]
 		}
 		textBuffer=newBuffer
-	} else {
+	} else { //split parts of the line such that the right part of the line sits in a newline
 		newBuffer:=make([][]rune,len(textBuffer)+1)
 		leftBuffer:=make([]rune,len(textBuffer[currRow][:currCol]))
 		rightBuffer:=make([]rune,len(textBuffer[currRow][currCol:]))
@@ -257,6 +303,7 @@ func insertLine() {
 		copy(newBuffer[currRow+1:],textBuffer[currRow:])
 		textBuffer=newBuffer
 	}
+	modified=true
 }
 
 func singlePrint(col, row int, fg, bg termbox.Attribute, message string) {
@@ -265,6 +312,40 @@ func singlePrint(col, row int, fg, bg termbox.Attribute, message string) {
 		col += runewidth.RuneWidth(ch)
 	}
 }
+
+
+func copyLine() {
+	tempBuffer:=make([]rune,len(textBuffer[currRow]))
+	copy(tempBuffer,textBuffer[currRow])
+	copyBuffer=tempBuffer
+}
+
+func pasteLine() {
+	if len(copyBuffer)==0 { //simply move to the next line
+		currCol=0
+		currRow+=1
+	} else {
+		newBuffer:=make([][]rune,len(textBuffer)+1)
+		copy(newBuffer[:currRow],textBuffer[:currRow])
+		newBuffer[currRow]=copyBuffer
+		copy(newBuffer[currRow+1:],textBuffer[currRow:])
+
+		textBuffer=newBuffer
+	}
+}
+
+func cutLine() {
+	tempBuffer:=make([]rune,len(textBuffer[currRow]))
+	newbuffer:=make([][]rune,len(textBuffer)-1)
+
+	copy(tempBuffer,textBuffer[currRow])
+	
+	copy(newbuffer[:currRow],textBuffer[:currRow])
+	copy(newbuffer[currRow:],textBuffer[currRow+1:])
+	textBuffer=newbuffer
+	copyBuffer=tempBuffer
+}
+
 
 // These variables help with preserving the column state on encountering a newline during traversal. Init in the RunEditor() func
 var tempRowUp int
@@ -282,12 +363,16 @@ func handleInput() {
 			insertCharacter(event)	
 		} else {
 			switch event.Ch {
-			case 'q':
-				termbox.Close()
-				os.Exit(0)
-			case 'i':
-				mode = 1
+				case 'q':
+					termbox.Close()
+					os.Exit(0)
+				case 'i':
+					mode = 1
+				
+				case 's':
+					save(targetFile)
 			}
+
 		}
 	} else {
 		switch event.Type {
@@ -402,6 +487,23 @@ func handleInput() {
 				currRow = len(textBuffer) - 1
 				currCol = 0
 
+			case termbox.KeyCtrlC:
+				copyLine()
+
+			case termbox.KeyCtrlV:
+				if mode==1{
+					pasteLine()
+				} else {
+					log.Println("Cannot paste in view mode")
+				}
+
+			case termbox.KeyCtrlX:
+				if mode==1 {
+					cutLine()
+				} else {
+					log.Println("Cannot cut in view mode")
+				}
+			
 			default:
 				log.Println("Some other key")
 
